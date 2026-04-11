@@ -1,0 +1,19 @@
+You are building a React Native + Expo application using Expo Router v3.
+
+Rules:
+- Always use TypeScript with strict types. Never use `any`.
+- Use NativeWind for all styling. Never use StyleSheet.create().
+- Use TanStack Query for all data fetching. Never fetch inside useEffect.
+- Use React Hook Form + Zod for all forms. Never use controlled inputs with useState.
+- Use the services/ folder for all Supabase calls. Never call Supabase directly in a component.
+- Use the hooks/ folder for all TanStack Query hooks. Never call useQuery directly in a page.
+- File-based routing via Expo Router. Never use React Navigation directly.
+- All enum values come from constants/statuses.ts. Never hardcode status strings.
+- Currency is Philippine Peso. Use the formatCurrency util from utils/formatCurrency.ts.
+- Role checks use the permissions util from utils/permissions.ts. Never check role strings inline.
+- Components are in components/. Pages are thin — they import components and hooks only.
+- Every Supabase mutation must log to staff_activity_logs.
+- Real-time subscriptions use the useRealtime hook. Never set up a channel directly in a component.
+- All dates should use ISO 8601 format.
+- Use NativeWind className for all styling, including responsive breakpoints (md:, lg:).
+- On web with wide screens, use sidebar layout. On mobile, use bottom tabs.
