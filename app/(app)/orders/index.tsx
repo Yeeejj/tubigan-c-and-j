@@ -27,7 +27,13 @@ export default function OrdersScreen() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<OrderStatus | undefined>();
 
-  const { data: orders, isLoading, error, refetch } = useOrders({ status: statusFilter, search });
+  const today = new Date().toISOString().split('T')[0];
+  const { data: orders, isLoading, error, refetch } = useOrders({
+    status: statusFilter,
+    search,
+    dateFrom: `${today}T00:00:00`,
+    dateTo: `${today}T23:59:59`,
+  });
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorDisplay message={error.message} onRetry={refetch} />;
@@ -75,8 +81,8 @@ export default function OrdersScreen() {
       {/* Order List */}
       {!orders?.length ? (
         <EmptyState
-          title="No Orders"
-          message="No orders found matching your filters."
+          title="No Orders Today"
+          message="No orders found for today."
           actionLabel={canCreateOrders(user?.role ?? 'delivery_staff') ? 'Create Order' : undefined}
           onAction={() => router.push('/(app)/orders/new')}
         />

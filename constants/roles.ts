@@ -18,6 +18,6 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 export const ROLE_MODULES: Record<UserRole, string[]> = {
   owner: ['dashboard', 'orders', 'delivery', 'process', 'inventory', 'sales', 'staff', 'archive'],
   admin: ['dashboard', 'orders', 'delivery', 'process', 'inventory', 'sales', 'staff', 'archive'],
-  in_shop_staff: ['dashboard', 'orders', 'process', 'inventory'],
-  delivery_staff: ['delivery', 'inventory'],
+  in_shop_staff: ['dashboard', 'orders', 'process', 'inventory', 'staff'],
+  delivery_staff: ['delivery', 'inventory', 'staff'],
 };

@@ -1,61 +1,43 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, Alert, Platform } from 'react-native';
+import React from 'react';
+import { View, Text, ScrollView, Alert, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useForm, Controller, useFieldArray } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createOrderSchema, type CreateOrderFormData } from '@/schemas/order.schema';
 import { useCreateOrder } from '@/hooks/useOrders';
-import { useQuery } from '@tanstack/react-query';
-import { getCustomers } from '@/services/customers';
-import { getProducts } from '@/services/products';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Card } from '@/components/ui/Card';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { formatCurrency } from '@/utils/formatCurrency';
 import { PAYMENT_METHOD_LABELS } from '@/constants/statuses';
 
 export default function NewOrderScreen() {
   const router = useRouter();
   const createOrder = useCreateOrder();
-  const [customerSearch, setCustomerSearch] = useState('');
-
-  const { data: customers, isLoading: customersLoading } = useQuery({
-    queryKey: ['customers', customerSearch],
-    queryFn: () => getCustomers(customerSearch),
-  });
-
-  const { data: products, isLoading: productsLoading } = useQuery({
-    queryKey: ['products'],
-    queryFn: () => getProducts(),
-  });
 
   const {
     control,
     handleSubmit,
     watch,
-    setValue,
     formState: { errors, isSubmitting },
   } = useForm<CreateOrderFormData>({
     resolver: zodResolver(createOrderSchema),
     defaultValues: {
-      customer_id: '',
+      customer_name: '',
+      customer_phone: '',
       delivery_address: '',
       delivery_date: null,
       payment_method: 'cash',
       notes: null,
-      items: [{ product_id: '', quantity: 1, unit_price: 0 }],
+      price_per_gallon: 0,
+      number_of_gallons: 1,
     },
   });
 
-  const { fields, append, remove } = useFieldArray({ control, name: 'items' });
-  const watchItems = watch('items');
-
-  const totalAmount = watchItems.reduce(
-    (sum, item) => sum + (item.quantity || 0) * (item.unit_price || 0),
-    0
-  );
+  const watchPrice = watch('price_per_gallon');
+  const watchGallons = watch('number_of_gallons');
+  const totalAmount = (watchPrice || 0) * (watchGallons || 0);
 
   const onSubmit = async (data: CreateOrderFormData) => {
     try {
@@ -77,18 +59,6 @@ export default function NewOrderScreen() {
     }
   };
 
-  if (customersLoading || productsLoading) return <LoadingSpinner />;
-
-  const customerOptions = (customers ?? []).map((c) => ({
-    label: `${c.name} - ${c.phone}`,
-    value: c.id,
-  }));
-
-  const productOptions = (products ?? []).map((p) => ({
-    label: `${p.name} - ${formatCurrency(p.unit_price)}`,
-    value: p.id,
-  }));
-
   const paymentOptions = Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => ({
     label,
     value,
@@ -98,25 +68,35 @@ export default function NewOrderScreen() {
     <ScrollView className="flex-1 bg-gray-50" contentContainerStyle={{ padding: 16 }}>
       <Text className="mb-4 text-xl font-bold text-gray-900">New Order</Text>
 
-      {/* Customer Selection */}
+      {/* Customer Info */}
       <Card className="mb-4">
         <Text className="mb-3 text-base font-semibold text-gray-800">Customer</Text>
         <Controller
           control={control}
-          name="customer_id"
-          render={({ field: { value, onChange } }) => (
-            <Select
-              label="Select Customer"
-              options={customerOptions}
+          name="customer_name"
+          render={({ field: { onChange, onBlur, value } }) => (
+            <Input
+              label="Customer Name"
+              placeholder="Enter customer name"
+              onBlur={onBlur}
+              onChangeText={onChange}
               value={value}
-              onChange={(v) => {
-                onChange(v);
-                const customer = customers?.find((c) => c.id === v);
-                if (customer) {
-                  setValue('delivery_address', customer.address);
-                }
-              }}
-              error={errors.customer_id?.message}
+              error={errors.customer_name?.message}
+            />
+          )}
+        />
+        <Controller
+          control={control}
+          name="customer_phone"
+          render={({ field: { onChange, onBlur, value } }) => (
+            <Input
+              label="Phone Number"
+              placeholder="Enter phone number"
+              keyboardType="phone-pad"
+              onBlur={onBlur}
+              onChangeText={onChange}
+              value={value}
+              error={errors.customer_phone?.message}
             />
           )}
         />
@@ -138,57 +118,40 @@ export default function NewOrderScreen() {
         />
       </Card>
 
-      {/* Order Items */}
+      {/* Price & Gallons */}
       <Card className="mb-4">
-        <Text className="mb-3 text-base font-semibold text-gray-800">Items</Text>
-        {fields.map((field, index) => (
-          <View key={field.id} className="mb-3 rounded-lg border border-gray-100 bg-gray-50 p-3">
-            <Controller
-              control={control}
-              name={`items.${index}.product_id`}
-              render={({ field: { value, onChange } }) => (
-                <Select
-                  label="Product"
-                  options={productOptions}
-                  value={value}
-                  onChange={(v) => {
-                    onChange(v);
-                    const product = products?.find((p) => p.id === v);
-                    if (product) {
-                      setValue(`items.${index}.unit_price`, product.unit_price);
-                    }
-                  }}
-                  error={errors.items?.[index]?.product_id?.message}
-                />
-              )}
+        <Text className="mb-3 text-base font-semibold text-gray-800">Order Details</Text>
+        <Controller
+          control={control}
+          name="price_per_gallon"
+          render={({ field: { onChange, value } }) => (
+            <Input
+              label="Price per Gallon"
+              placeholder="Enter price per gallon"
+              keyboardType="numeric"
+              onChangeText={(text) => onChange(parseFloat(text) || 0)}
+              value={value ? String(value) : ''}
+              error={errors.price_per_gallon?.message}
             />
-            <Controller
-              control={control}
-              name={`items.${index}.quantity`}
-              render={({ field: { onChange, value } }) => (
-                <Input
-                  label="Quantity"
-                  keyboardType="numeric"
-                  onChangeText={(text) => onChange(parseInt(text) || 0)}
-                  value={String(value)}
-                  error={errors.items?.[index]?.quantity?.message}
-                />
-              )}
-            />
-            <Text className="text-right text-sm font-medium text-gray-600">
-              Subtotal: {formatCurrency((watchItems[index]?.quantity || 0) * (watchItems[index]?.unit_price || 0))}
-            </Text>
-            {fields.length > 1 && (
-              <Button title="Remove" onPress={() => remove(index)} variant="danger" size="sm" className="mt-2" />
-            )}
-          </View>
-        ))}
-        <Button
-          title="+ Add Item"
-          onPress={() => append({ product_id: '', quantity: 1, unit_price: 0 })}
-          variant="secondary"
-          size="sm"
+          )}
         />
+        <Controller
+          control={control}
+          name="number_of_gallons"
+          render={({ field: { onChange, value } }) => (
+            <Input
+              label="Number of Gallons"
+              placeholder="Enter number of gallons"
+              keyboardType="numeric"
+              onChangeText={(text) => onChange(parseInt(text) || 0)}
+              value={value ? String(value) : ''}
+              error={errors.number_of_gallons?.message}
+            />
+          )}
+        />
+        <Text className="mt-2 text-right text-sm font-medium text-gray-600">
+          Subtotal: {formatCurrency(totalAmount)}
+        </Text>
       </Card>
 
       {/* Payment Method */}

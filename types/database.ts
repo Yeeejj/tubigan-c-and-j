@@ -8,7 +8,36 @@ export interface UserProfile {
   role: UserRole;
   phone: string;
   is_active: boolean;
+  advance_pay_balance: number;
   created_at: string;
+}
+
+// Attendance log
+export interface AttendanceLog {
+  id: string;
+  user_id: string;
+  status: 'on_duty' | 'absent';
+  logged_by: string;
+  marked_at: string;
+  date: string;
+  note: string | null;
+  is_admin_override: boolean;
+  created_at: string;
+  // Joined
+  logged_by_user?: UserProfile;
+}
+
+// Advance pay transaction
+export interface AdvancePayTransaction {
+  id: string;
+  user_id: string;
+  recorded_by: string;
+  amount: number;
+  running_balance: number;
+  note: string | null;
+  created_at: string;
+  // Joined
+  recorded_by_user?: UserProfile;
 }
 
 // Customer

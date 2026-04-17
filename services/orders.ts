@@ -65,16 +65,64 @@ export async function getOrderById(id: string): Promise<Order> {
 }
 
 interface CreateOrderData {
-  customer_id: string;
+  customer_name: string;
+  customer_phone: string;
   delivery_address: string;
   delivery_date: string | null;
   payment_method: PaymentMethod;
   notes: string | null;
-  items: { product_id: string; quantity: number; unit_price: number }[];
+  price_per_gallon: number;
+  number_of_gallons: number;
+}
+
+async function getOrCreateDefaultProduct(): Promise<string> {
+  // Try to find an existing active product
+  const { data: existing } = await supabase
+    .from('products')
+    .select('id')
+    .eq('is_active', true)
+    .limit(1)
+    .single();
+
+  if (existing) return existing.id;
+
+  // Create a default product if none exist
+  const { data: created, error } = await supabase
+    .from('products')
+    .insert({ name: 'Gallon', unit_price: 0, is_active: true })
+    .select()
+    .single();
+  if (error) throw error;
+  return created.id;
 }
 
 export async function createOrder(data: CreateOrderData, userId: string): Promise<Order> {
-  const totalAmount = data.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+  // Find existing customer by phone or create a new one
+  const { data: existingCustomers } = await supabase
+    .from('customers')
+    .select('id')
+    .eq('phone', data.customer_phone)
+    .limit(1);
+
+  let customerId: string;
+  if (existingCustomers && existingCustomers.length > 0) {
+    customerId = existingCustomers[0].id;
+    // Update name and address in case they changed
+    await supabase
+      .from('customers')
+      .update({ name: data.customer_name, address: data.delivery_address })
+      .eq('id', customerId);
+  } else {
+    const { data: newCustomer, error: customerError } = await supabase
+      .from('customers')
+      .insert({ name: data.customer_name, phone: data.customer_phone, address: data.delivery_address })
+      .select()
+      .single();
+    if (customerError) throw customerError;
+    customerId = newCustomer.id;
+  }
+
+  const totalAmount = data.price_per_gallon * data.number_of_gallons;
 
   // Get today's order count for order number generation
   const today = new Date().toISOString().split('T')[0];
@@ -90,7 +138,7 @@ export async function createOrder(data: CreateOrderData, userId: string): Promis
     .from('orders')
     .insert({
       order_number: orderNumber,
-      customer_id: data.customer_id,
+      customer_id: customerId,
       created_by: userId,
       order_status: 'pending',
       payment_status: 'unpaid',
@@ -105,15 +153,16 @@ export async function createOrder(data: CreateOrderData, userId: string): Promis
     .single();
   if (orderError) throw orderError;
 
-  const orderItems = data.items.map((item) => ({
-    order_id: order.id,
-    product_id: item.product_id,
-    quantity: item.quantity,
-    unit_price: item.unit_price,
-    subtotal: item.quantity * item.unit_price,
-  }));
+  // Get a valid product_id for the order item (FK constraint)
+  const productId = await getOrCreateDefaultProduct();
 
-  const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
+  const { error: itemsError } = await supabase.from('order_items').insert({
+    order_id: order.id,
+    product_id: productId,
+    quantity: data.number_of_gallons,
+    unit_price: data.price_per_gallon,
+    subtotal: totalAmount,
+  });
   if (itemsError) throw itemsError;
 
   // Log status history
@@ -128,6 +177,62 @@ export async function createOrder(data: CreateOrderData, userId: string): Promis
   await logStaffActivity(userId, 'created order', 'orders', order.id);
 
   return order as unknown as Order;
+}
+
+interface UpdateOrderData {
+  customer_name: string;
+  customer_phone: string;
+  delivery_address: string;
+  payment_method: PaymentMethod;
+  notes: string | null;
+  price_per_gallon: number;
+  number_of_gallons: number;
+}
+
+export async function updateOrder(orderId: string, data: UpdateOrderData, userId: string): Promise<void> {
+  // Update or create customer
+  const { data: order } = await supabase
+    .from('orders')
+    .select('customer_id')
+    .eq('id', orderId)
+    .single();
+  if (!order) throw new Error('Order not found');
+
+  // Update customer info
+  await supabase
+    .from('customers')
+    .update({ name: data.customer_name, phone: data.customer_phone, address: data.delivery_address })
+    .eq('id', order.customer_id);
+
+  const totalAmount = data.price_per_gallon * data.number_of_gallons;
+
+  // Update order
+  const { error: orderError } = await supabase
+    .from('orders')
+    .update({
+      delivery_address: data.delivery_address,
+      payment_method: data.payment_method,
+      total_amount: totalAmount,
+      notes: data.notes,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', orderId);
+  if (orderError) throw orderError;
+
+  // Update order items
+  const productId = await getOrCreateDefaultProduct();
+  const { error: itemsError } = await supabase
+    .from('order_items')
+    .update({
+      quantity: data.number_of_gallons,
+      unit_price: data.price_per_gallon,
+      subtotal: totalAmount,
+      product_id: productId,
+    })
+    .eq('order_id', orderId);
+  if (itemsError) throw itemsError;
+
+  await logStaffActivity(userId, 'updated order', 'orders', orderId);
 }
 
 export async function updateOrderStatus(
@@ -192,6 +297,19 @@ export async function recordPayment(
 
 export async function cancelOrder(orderId: string, reason: string, userId: string): Promise<void> {
   await updateOrderStatus(orderId, 'cancelled', userId, reason);
+}
+
+export async function deleteOrder(orderId: string, _userId: string): Promise<void> {
+  // Try RPC function first (bypasses RLS)
+  const { error: rpcError } = await supabase.rpc('delete_order', { p_order_id: orderId });
+  if (!rpcError) return;
+
+  // Fallback: direct deletes
+  await supabase.from('sales_records').delete().eq('order_id', orderId);
+  await supabase.from('deliveries').delete().eq('order_id', orderId);
+  await supabase.from('order_status_history').delete().eq('order_id', orderId);
+  await supabase.from('order_items').delete().eq('order_id', orderId);
+  await supabase.from('orders').delete().eq('id', orderId);
 }
 
 export async function getOrderStatusHistory(orderId: string): Promise<OrderStatusHistory[]> {

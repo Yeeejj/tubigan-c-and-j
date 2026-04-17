@@ -2,7 +2,7 @@ import React from 'react';
 import { Redirect, Tabs } from 'expo-router';
 import { Platform, View, Text, Pressable } from 'react-native';
 import { useAuth } from '@/context/AuthContext';
-import { canAccessModule } from '@/utils/permissions';
+import { canAccessModule, canManageStaff } from '@/utils/permissions';
 import { useOrdersRealtime } from '@/hooks/useRealtime';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
@@ -42,17 +42,17 @@ export default function AppLayout() {
   }
 
   const role = user.role;
+  const isStaffAdmin = canManageStaff(role);
 
-  const tabs = [
-    { name: 'dashboard', title: 'Dashboard' },
-    { name: 'orders/index', title: 'Orders' },
-    { name: 'delivery/index', title: 'Delivery' },
-    { name: 'process/index', title: 'Process' },
-    { name: 'inventory/index', title: 'Inventory' },
-    { name: 'sales/index', title: 'Sales' },
-    { name: 'staff/index', title: 'Staff' },
-    { name: 'archive/index', title: 'Archive' },
-  ];
+  // Staff members (non-admin) see "My Attendance" tab that goes to attendance screen
+  // Admin/Owner see "Staff" tab that goes to staff list
+  const staffHref = isStaffAdmin
+    ? '/(app)/staff'
+    : (role === 'in_shop_staff' || role === 'delivery_staff')
+    ? '/(app)/staff/attendance'
+    : null;
+
+  const staffTitle = isStaffAdmin ? 'Staff' : 'My Attendance';
 
   return (
     <Tabs
@@ -79,11 +79,7 @@ export default function AppLayout() {
       />
       <Tabs.Screen
         name="orders/index"
-        options={{
-          title: 'Orders',
-          tabBarIcon: ({ focused }) => <TabIcon name="orders" focused={focused} />,
-          href: canAccessModule(role, 'orders') ? '/(app)/orders' : null,
-        }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="orders/new"
@@ -144,14 +140,24 @@ export default function AppLayout() {
       <Tabs.Screen
         name="staff/index"
         options={{
-          title: 'Staff',
+          title: staffTitle,
           tabBarIcon: ({ focused }) => <TabIcon name="staff" focused={focused} />,
-          href: canAccessModule(role, 'staff') ? '/(app)/staff' : null,
+          href: isStaffAdmin ? '/(app)/staff' : null,
         }}
       />
       <Tabs.Screen
         name="staff/[id]"
         options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="staff/attendance"
+        options={{
+          title: 'My Attendance',
+          tabBarIcon: ({ focused }) => <TabIcon name="staff" focused={focused} />,
+          href: !isStaffAdmin && (role === 'in_shop_staff' || role === 'delivery_staff')
+            ? '/(app)/staff/attendance'
+            : null,
+        }}
       />
       <Tabs.Screen
         name="archive/index"
