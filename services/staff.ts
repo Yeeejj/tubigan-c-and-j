@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, supabaseAdmin } from './supabase';
 import { logStaffActivity } from './activityLog';
 import type { UserProfile, StaffActivityLog, AttendanceLog, AdvancePayTransaction } from '@/types/database';
 import type { UserRole } from '@/constants/roles';
@@ -42,18 +42,32 @@ export async function createStaff(
   role: 'in_shop_staff' | 'delivery_staff',
   adminId: string
 ): Promise<void> {
-  // Create auth user via signUp
+  // Create auth user — use admin client to skip email verification
   const email = `${username.toLowerCase().replace(/\s+/g, '')}@cjwater.local`;
-  const { data: authData, error: authError } = await supabase.auth.signUp({
-    email,
-    password,
-  });
-  if (authError) throw authError;
-  if (!authData.user) throw new Error('Failed to create auth user');
+  let userId: string;
+
+  if (supabaseAdmin) {
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+    if (authError) throw authError;
+    userId = authData.user.id;
+  } else {
+    // Fallback to signUp if service role key is not configured
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+    if (authError) throw authError;
+    if (!authData.user) throw new Error('Failed to create auth user');
+    userId = authData.user.id;
+  }
 
   // Create profile via RPC (bypasses RLS)
   const { error: profileError } = await supabase.rpc('create_staff_profile', {
-    p_user_id: authData.user.id,
+    p_user_id: userId,
     p_full_name: fullName,
     p_phone: phone,
     p_role: role,
@@ -62,7 +76,7 @@ export async function createStaff(
   if (profileError) {
     // Fallback: direct insert
     const { error: insertError } = await supabase.from('users').insert({
-      id: authData.user.id,
+      id: userId,
       full_name: fullName,
       phone,
       role,
@@ -72,7 +86,7 @@ export async function createStaff(
     if (insertError) throw insertError;
   }
 
-  await logStaffActivity(adminId, `created staff account: ${fullName}`, 'users', authData.user.id);
+  await logStaffActivity(adminId, `created staff account: ${fullName}`, 'users', userId);
 }
 
 export async function updateStaffProfile(
